@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codelens — AI Code Reviewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-void: #0B0D12;
+    --bg-panel: #14171F;
+    --bg-panel-raised: #1B1F2A;
+    --bg-input: #0E1017;
+    --border: #262B38;
+    --border-soft: #1E222E;
+    --text-hi: #EDEFF4;
+    --text-mid: #9AA0B4;
+    --text-dim: #5B6178;
+    --accent: #FFB454;
+    --accent-dim: #6B5330;
+    --good: #6EE7B7;
+    --good-dim: #1E3A32;
+    --bad: #FB7185;
+    --bad-dim: #3A1E24;
+    --info: #7DD3FC;
+    --info-dim: #1B3546;
+    --radius: 10px;
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html, body{ margin:0; padding:0; }
+
+  body{
+    background: var(--bg-void);
+    color: var(--text-hi);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 15% 0%, rgba(255,180,84,0.05), transparent 40%),
+      radial-gradient(circle at 85% 100%, rgba(125,211,252,0.04), transparent 40%);
+  }
+
+  a{ color: inherit; }
+
+  /* ---------- Top bar ---------- */
+  .topbar{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border-soft);
+    background: rgba(20,23,31,0.7);
+    backdrop-filter: blur(6px);
+    position: sticky;
+    top:0;
+    z-index: 20;
+  }
+.dots{ display:flex; gap:6px; margin-right:4px; }
+.dots span{
+  width:9px; height:9px;
+  border-radius:50%;
+  background: var(--border);
+  display:inline-block;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.dots:hover span{ transform: scale(1.05); }
+
+.dots span:nth-child(1):hover{
+  background: #FF5F57;
+  box-shadow: 0 0 6px rgba(255,95,87,0.6);
+}
+.dots span:nth-child(2):hover{
+  background: #FEBC2E;
+  box-shadow: 0 0 6px rgba(254,188,46,0.6);
+}
+.dots span:nth-child(3):hover{
+  background: #28C840;
+  box-shadow: 0 0 6px rgba(40,200,64,0.6);
+}
+.brand{
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.brand:hover{ opacity: 0.8; }
+  .brand{
+    font-family: var(--font-display);
+    font-weight:700;
+    font-size: 1.05rem;
+    letter-spacing: 0.01em;
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .brand .mark{ color: var(--accent); }
+  .brand .tag{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    font-weight:400;
+    letter-spacing: 0.03em;
+  }
+  .topbar-right{
+    margin-left:auto;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .status-pulse{
+    width:6px; height:6px; border-radius:50%;
+    background: var(--good);
+    box-shadow: 0 0 0 0 rgba(110,231,183,0.6);
+    animation: pulse 2.4s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow: 0 0 0 0 rgba(110,231,183,0.45); }
+    70%{ box-shadow: 0 0 0 6px rgba(110,231,183,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(110,231,183,0); }
+  }
+
+  /* ---------- Layout ---------- */
+  .layout{
+    display:grid;
+    grid-template-columns: 1.1fr 0.95fr;
+    gap: 18px;
+    padding: 22px;
+    max-width: 1440px;
+    margin: 0 auto;
+    align-items:start;
+  }
+  @media (max-width: 980px){
+    .layout{ grid-template-columns: 1fr; }
+  }
+
+  .panel{
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+
+  .panel-head{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-panel-raised);
+  }
+  .panel-head h2{
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    font-weight:600;
+    letter-spacing:0.04em;
+    text-transform: uppercase;
+    color: var(--text-mid);
+    margin:0;
+  }
+
+  /* ---------- Language selector ---------- */
+  .lang-select{
+    display:flex;
+    gap:4px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .lang-select button{
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight:500;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 6px 11px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+  .lang-select button:hover{ color: var(--text-hi); }
+  .lang-select button.active{
+    background: var(--bg-panel-raised);
+    color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+  .lang-select button:focus-visible,
+  button:focus-visible,
+  textarea:focus-visible{
+    outline: 2px solid var(--info);
+    outline-offset: 2px;
+  }
+
+  /* ---------- Editor ---------- */
+  .editor-wrap{
+    position: relative;
+    display:flex;
+    background: var(--bg-input);
+    min-height: 380px;
+    flex: 1;
+  }
+  .line-numbers{
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: var(--text-dim);
+    padding: 16px 10px 16px 16px;
+    text-align: right;
+    user-select: none;
+    white-space: pre;
+    border-right: 1px solid var(--border-soft);
+    background: var(--bg-input);
+    overflow: hidden;
+  }
+  textarea#code-input{
+    flex: 1;
+    resize: none;
+    border: none;
+    background: transparent;
+    color: var(--text-hi);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    padding: 16px;
+    outline: none;
+    tab-size: 2;
+  }
+  textarea#code-input::placeholder{ color: var(--text-dim); }
+
+  .scan-line{
+    position:absolute;
+    left:0; right:0; top:0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0;
+    pointer-events:none;
+  }
+  .scan-line.active{
+    opacity: 1;
+    animation: sweep 1.3s ease-in-out infinite;
+  }
+  @keyframes sweep{
+    0%{ transform: translateY(0); }
+    100%{ transform: translateY(380px); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .scan-line.active{ animation: none; opacity: 0.6; top: 50%; }
+    .status-pulse{ animation: none; }
+  }
+
+  /* ---------- Action row ---------- */
+  .action-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg-panel-raised);
+  }
+  .btn{
+    font-family: var(--font-body);
+    font-size: 0.88rem;
+    font-weight:600;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    transition: transform 0.1s ease, background 0.15s ease, border-color 0.15s ease;
+  }
+  .btn:active{ transform: translateY(1px); }
+  .btn-primary{
+    background: var(--accent);
+    color: #1A1305;
+    flex: 1;
+    justify-content: center;
+  }
+  .btn-primary:hover{ background: #ffc275; }
+  .btn-primary:disabled{
+    background: var(--accent-dim);
+    color: var(--text-dim);
+    cursor: not-allowed;
+  }
+  .btn-ghost{
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-mid);
+  }
+  .btn-ghost:hover{ color: var(--text-hi); border-color: var(--text-dim); }
+
+  .spinner{
+    width:14px; height:14px;
+    border-radius:50%;
+    border: 2px solid rgba(26,19,5,0.35);
+    border-top-color: #1A1305;
+    animation: spin 0.7s linear infinite;
+    display:none;
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+  .btn-primary.loading .spinner{ display:inline-block; }
+  .btn-primary.loading .btn-label::after{ content: "Analyzing…"; }
+  .btn-primary.loading .btn-label{ font-size:0; }
+  .btn-primary.loading .btn-label::after{ font-size: 0.88rem; }
+
+  /* ---------- Error banner ---------- */
+  .error-banner{
+    display:none;
+    align-items: center;
+    gap:10px;
+    margin: 0 16px;
+    margin-top: 14px;
+    padding: 10px 12px;
+    background: var(--bad-dim);
+    border: 1px solid rgba(251,113,133,0.35);
+    color: var(--bad);
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-family: var(--font-mono);
+  }
+  .error-banner.show{ display:flex; }
+
+  /* ---------- Results panel ---------- */
+  .results-body{
+    padding: 18px;
+    display:flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 420px;
+  }
+
+  .empty-state{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    color: var(--text-dim);
+    gap: 10px;
+    padding: 40px 20px;
+  }
+  .empty-state .glyph{
+    font-family: var(--font-mono);
+    font-size: 1.6rem;
+    color: var(--border);
+    border: 1px dashed var(--border);
+    width:52px; height:52px;
+    display:flex; align-items:center; justify-content:center;
+    border-radius: 10px;
+  }
+  .empty-state h3{
+    font-family: var(--font-display);
+    color: var(--text-mid);
+    font-size: 0.95rem;
+    margin: 4px 0 0 0;
+  }
+  .empty-state p{ font-size: 0.82rem; margin:0; max-width: 280px; line-height:1.5; }
+
+  .verdict-stamp{
+    align-self: flex-start;
+    font-family: var(--font-mono);
+    font-weight:700;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1.5px solid var(--good);
+    color: var(--good);
+    transform: rotate(-1.5deg);
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+  }
+  .verdict-stamp.warn{ border-color: var(--accent); color: var(--accent); }
+  .verdict-stamp .dot{ width:6px; height:6px; border-radius:50%; background: currentColor; }
+
+  .card{
+    background: var(--bg-panel-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.copy-btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.copy-btn:hover {
+  background: var(--border);
+}
+
+.code-block {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--code-bg);
+  white-space: pre;
+}
+
+.code-block code {
+  font-family: monospace;
+  font-size: 14px;
+}
+  .card-title{
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight:600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-mid);
+    margin: 0 0 10px 0;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .card-title .swatch{
+    width:7px; height:7px; border-radius:2px;
+  }
+  .card p{
+    font-size: 0.87rem;
+    line-height: 1.6;
+    color: var(--text-hi);
+    margin: 0;
+  }
+
+  .issue-list{
+    list-style:none;
+    margin:0; padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .issue-list li{
+    display:flex;
+    gap:10px;
+    font-size: 0.85rem;
+    line-height:1.5;
+    color: var(--text-hi);
+  }
+  .issue-list li .tag{
+    flex-shrink:0;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight:700;
+    color: var(--bad);
+    background: var(--bad-dim);
+    border: 1px solid rgba(251,113,133,0.3);
+    border-radius: 4px;
+    padding: 2px 6px;
+    height: fit-content;
+    letter-spacing: 0.03em;
+  }
+
+  .complexity-row{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .complexity-box{
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .status-bar{
+  display:flex;
+  align-items:center;
+  gap: 16px;
+  padding: 6px 16px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  background: var(--bg-input);
+  border-top: 1px solid var(--border-soft);
+}
+#engine-label.revving{
+  color: var(--bad);
+  animation: label-glow-revving 0.6s ease-in-out infinite;
+}
+@keyframes label-glow-revving{
+  0%, 100%{ text-shadow: 0 0 5px rgba(251,113,133,0.7), 0 0 12px rgba(251,113,133,0.4); }
+  50%{ text-shadow: 0 0 9px rgba(251,113,133,1), 0 0 20px rgba(251,113,133,0.6); }
+}
+#engine-label{
+  color: var(--good);
+  text-shadow:
+    0 0 4px rgba(110,231,183,0.6),
+    0 0 10px rgba(110,231,183,0.35);
+  animation: label-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes label-glow{
+  0%, 100%{
+    text-shadow:
+      0 0 4px rgba(110,231,183,0.6),
+      0 0 10px rgba(110,231,183,0.35);
+  }
+  50%{
+    text-shadow:
+      0 0 7px rgba(110,231,183,0.9),
+      0 0 16px rgba(110,231,183,0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce){
+  #engine-label{ animation: none; }
+}
+.tire-anchor{
+  display:inline-block;
+  width: 32px;
+  height: 32px;
+}
+
+.tire-fixed{
+  position: fixed;
+  top: 0; left: 0;
+  width: 32px;   /* svg jitna */
+  height: 32px;
+  color: var(--text-dim);
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0;
+}
+.tire-fixed.ready{ opacity: 1; }
+.tire-fixed .tire{ display:block; }
+
+.tire-fixed.state-enter{
+  animation: tire-enter 900ms cubic-bezier(0.2,0.8,0.2,1) forwards;
+}
+.tire-fixed.state-burnout .tire{
+  color: var(--accent);
+  animation: tire-spin-fast 0.12s linear infinite;
+}
+.tire-fixed.state-burnout .smoke{
+  animation: smoke-puff 0.5s ease-out infinite;
+  animation-delay: var(--d);
+}
+.tire-fixed.state-exit{
+  animation: tire-exit 900ms cubic-bezier(0.4,0,0.7,1) forwards;
+}
+.tire-fixed.state-exit .tire{ color: var(--accent); }
+
+@keyframes tire-enter{
+  from{ transform: translateX(110vw) rotate(0deg); opacity: 0.4; }
+  to{ transform: translateX(0) rotate(-540deg); opacity: 1; }
+}
+@keyframes tire-exit{
+  from{ transform: translateX(0) rotate(0deg); }
+  to{ transform: translateX(-130vw) rotate(-900deg); }
+}
+@keyframes tire-spin-fast{ to{ transform: rotate(360deg); } }
+
+.smoke{
+  position:absolute;
+  left: 3px; bottom: -4px;
+  width: 9px;      /* pehle 5px tha */
+  height: 9px;
+  border-radius:50%;
+  background: var(--text-dim);
+  opacity:0;
+  pointer-events:none;
+}
+@keyframes smoke-puff{
+  0%{ opacity:0; transform: translate(0,0) scale(0.3); }
+  35%{ opacity:0.7; }
+  100%{ opacity:0; transform: translate(16px,-20px) scale(2.4); }  /* pehle 9px,-12px scale(1.8) tha */
+}
+
+@media (prefers-reduced-motion: reduce){
+  .tire-fixed.state-enter, .tire-fixed.state-exit{ animation: none; transform: translateX(0); opacity:1; }
+  .tire-fixed.state-burnout .tire, .tire-fixed.state-burnout .smoke{ animation: none; opacity:0.8; }
+}
+.status-bar span b{ color: var(--text-mid); font-weight:500; }
+.status-bar .status-spacer{ flex:1; }
+  .complexity-box .label{
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+  }
+  .complexity-box .value{
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    font-weight:700;
+    color: var(--info);
+    margin-top: 4px;
+  }
+
+  .code-block{
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: var(--good);
+    overflow-x: auto;
+    white-space: pre;
+    margin: 10px 0 0 0;
+  }
+
+  .footer-note{
+    text-align:center;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    padding: 18px 22px 30px;
+    letter-spacing: 0.02em;
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="dots"><span></span><span></span><span></span></div>
+    <div class="brand"><span class="mark">Codelens</span><span class="tag">// static analysis, on demand</span></div>
+   <div class="topbar-right" id="topbar-right">
+  <span class="tire-anchor" id="tire-anchor"></span>
+  <span id="engine-label">engine idle</span>
+</div>
+
+<!-- yeh alag se, topbar ke bahar/adjacent rakho -->
+<div class="tire-fixed" id="tire-fixed">
+  <span class="smoke" style="--d:0s"></span>
+  <span class="smoke" style="--d:0.15s"></span>
+  <span class="smoke" style="--d:0.3s"></span>
+<svg id="tire" class="tire" width="32" height="32" viewBox="0 0 32 32">
+
+  <!-- rim -->
+  <circle cx="16" cy="16" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/>
+
+  <!-- spokes -->
+  <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+    <line x1="16" y1="7" x2="16" y2="10.5" transform="rotate(0 16 16)"/>
+    <line x1="16" y1="7" x2="16" y2="10.5" transform="rotate(72 16 16)"/>
+    <line x1="16" y1="7" x2="16" y2="10.5" transform="rotate(144 16 16)"/>
+    <line x1="16" y1="7" x2="16" y2="10.5" transform="rotate(216 16 16)"/>
+    <line x1="16" y1="7" x2="16" y2="10.5" transform="rotate(288 16 16)"/>
+  </g>
+
+  <!-- hub -->
+  <circle cx="16" cy="16" r="2.6" fill="currentColor"/>
+</svg>
+</div>
+  </div>
+
+  <div class="layout">
+
+    <!-- ============ LEFT: EDITOR ============ -->
+    <section class="panel">
+      
+
+      <div class="editor-wrap">
+        <div class="scan-line" id="scan-line"></div>
+        <div class="line-numbers" id="line-numbers">1</div>
+        <textarea id="code-input" spellcheck="false" placeholder="Paste or type your code here…"></textarea>
+        
+      </div>
+      <div class="status-bar">
+  <span>Ln <b id="status-line">1</b>, Col <b id="status-col">1</b></span>
+  <span><b id="status-chars">0</b> chars</span>
+  <span class="status-spacer"></span>
+</div>
+
+      <div class="error-banner" id="error-banner">
+        <span>⚠</span>
+        <span id="error-text">Nothing to analyze — paste or write code first.</span>
+      </div>
+
+      <div class="action-row">
+        <button class="btn btn-primary" id="analyze-btn">
+          <span class="spinner"></span>
+          <span class="btn-label">Analyze Code</span>
+        </button>
+        <button class="btn btn-ghost" id="reset-btn">Clear</button>
+      </div>
+    </section>
+
+    <!-- ============ RIGHT: RESULTS ============ -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Analysis</h2>
+      </div>
+
+      <div class="results-body" id="results-body">
+        <div class="empty-state" id="empty-state">
+          <div class="glyph">〈/〉</div>
+          <h3>No analysis yet</h3>
+          <p>Run your code through Analyze Code to see explanation, issues, complexity, and a better approach here.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="footer-note">CODELENS · UI PREVIEW — analysis shown is placeholder data, wired to the real engine later</div>
+
+<script>
+  const codeInput = document.getElementById('code-input');
+  const lineNumbers = document.getElementById('line-numbers');
+  const analyzeBtn = document.getElementById('analyze-btn');
+  const resetBtn = document.getElementById('reset-btn');
+  const errorBanner = document.getElementById('error-banner');
+  const errorText = document.getElementById('error-text');
+  const resultsBody = document.getElementById('results-body');
+  const scanLine = document.getElementById('scan-line');
+  const langButtons = document.querySelectorAll('.lang-select button');
+
+  let currentLang = 'C++';
+
+  const emptyStateHTML = `
+    <div class="empty-state" id="empty-state">
+      <div class="glyph">〈/〉</div>
+      <h3>No analysis yet</h3>
+      <p>Run your code through Analyze Code to see explanation, issues, complexity, and a better approach here.</p>
+    </div>`;
+
+  function updateLineNumbers(){
+    const lines = codeInput.value.split('\n').length;
+    let out = '';
+    for(let i=1;i<=lines;i++){ out += i + '\n'; }
+    lineNumbers.textContent = out;
+  }
+  codeInput.addEventListener('input', updateLineNumbers);
+  codeInput.addEventListener('scroll', () => {
+    lineNumbers.scrollTop = codeInput.scrollTop;
+  });
+  updateLineNumbers();
+
+  langButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      langButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentLang = btn.dataset.lang;
+    });
+  });
+
+  function showError(msg){
+    errorText.textContent = msg;
+    errorBanner.classList.add('show');
+  }
+  function hideError(){
+    errorBanner.classList.remove('show');
+  }
+
+  function setLoading(isLoading){
+    analyzeBtn.disabled = isLoading;
+    analyzeBtn.classList.toggle('loading', isLoading);
+    scanLine.classList.toggle('active', isLoading);
+  }
+
+  function resetAll(){
+    codeInput.value = '';
+    updateLineNumbers();
+    hideError();
+    setLoading(false);
+    resultsBody.innerHTML = emptyStateHTML;
+    codeInput.focus();
+  }
+  resetBtn.addEventListener('click', resetAll);
+
+  // Placeholder mock analysis — swap this function's body for a real API call later.
+  function mockAnalyze(code, lang){
+    const isSmall = code.trim().length < 120;
+    return {
+      optimal: isSmall,
+      explanation: `This ${lang} snippet ${isSmall ? 'performs a straightforward operation with a clear, linear control flow.' : 'runs through nested iteration to build its result, which is likely the main cost driver here.'} Variable names and structure suggest it prioritizes clarity over performance, which is a reasonable default unless this runs on large inputs.`,
+      issues: isSmall ? [
+        { tag: 'MINOR', text: 'No input validation — an empty or malformed input will fail silently instead of raising a clear error.' }
+      ] : [
+        { tag: 'BUG', text: 'Loop bound looks off-by-one on the upper edge; verify the boundary condition against the intended range.' },
+        { tag: 'PERF', text: 'Recomputing the same lookup inside the inner loop — hoist it outside to avoid redundant work.' },
+        { tag: 'STYLE', text: 'Deeply nested conditionals reduce readability; consider early returns to flatten the logic.' }
+      ],
+      time: isSmall ? 'O(n)' : 'O(n²)',
+      space: isSmall ? 'O(1)' : 'O(n)',
+      optimizedNote: isSmall
+        ? 'Already close to optimal for this problem shape — no asymptotic improvement available.'
+        : 'A hash-map based single pass can collapse the nested loop into linear time.',
+      optimizedCode: isSmall
+        ? null
+        : (lang === 'Python'
+            ? `def solve(nums, target):\n    seen = {}\n    for i, n in enumerate(nums):\n        if target - n in seen:\n            return [seen[target - n], i]\n        seen[n] = i\n    return []`
+            : `unordered_map<int,int> seen;\nfor (int i = 0; i < n.size(); i++) {\n    if (seen.count(target - n[i]))\n        return {seen[target - n[i]], i};\n    seen[n[i]] = i;\n}`)
+    };
+  }
+  document.querySelector('.brand').addEventListener('click', () => {
+  location.reload();
+});
+const tireFixed = document.getElementById('tire-fixed');
+const tireAnchor = document.getElementById('tire-anchor');
+const engineLabel = document.getElementById('engine-label');
+
+function parkTire(){
+  const rect = tireAnchor.getBoundingClientRect();
+  tireFixed.style.top = rect.top + 'px';
+  tireFixed.style.left = rect.left + 'px';
+}
+
+function playEntrance(){
+  parkTire();
+  tireFixed.classList.remove('state-exit', 'state-burnout');
+  tireFixed.classList.add('ready', 'state-enter');
+  tireFixed.addEventListener('animationend', function onEnd(e){
+    if(e.animationName !== 'tire-enter') return;
+    tireFixed.removeEventListener('animationend', onEnd);
+    tireFixed.classList.remove('state-enter');
+  });
+}
+
+window.addEventListener('load', playEntrance);
+window.addEventListener('resize', parkTire);
+
+// apne existing setLoading() ko isse replace karo
+function setLoading(isLoading){
+  analyzeBtn.disabled = isLoading;
+  analyzeBtn.classList.toggle('loading', isLoading);
+  scanLine.classList.toggle('active', isLoading);
+
+  if(isLoading){
+    engineLabel.textContent = 'engine revving…';
+    engineLabel.classList.add('revving');
+    parkTire();
+    tireFixed.classList.remove('state-enter', 'state-exit');
+    tireFixed.classList.add('ready', 'state-burnout');
+  } else {
+    engineLabel.textContent = 'engine idle';
+    engineLabel.classList.remove('revving');
+    tireFixed.classList.remove('state-burnout');
+    tireFixed.classList.add('state-exit');
+  
+    tireFixed.addEventListener('animationend', function onExitEnd(e){
+      if(e.animationName !== 'tire-exit') return;
+      tireFixed.removeEventListener('animationend', onExitEnd);
+      tireFixed.classList.remove('state-exit', 'ready');
+      setTimeout(playEntrance, 500);
+    });
+  }
+}
+function renderResults(aiResponse) {
+
+    console.log("Rendering AI response:", aiResponse);
+
+    // AI response ko string mein convert karo
+    const text = String(aiResponse || "");
+
+
+    // Section nikalne ka helper
+    function getSection(start, end) {
+
+        const startIndex = text.indexOf(start);
+
+        if (startIndex === -1) {
+            return "";
+        }
+
+        const contentStart = startIndex + start.length;
+
+        if (!end) {
+            return text.substring(contentStart).trim();
+        }
+
+        const endIndex = text.indexOf(end, contentStart);
+
+        if (endIndex === -1) {
+            return text.substring(contentStart).trim();
+        }
+
+        return text
+            .substring(contentStart, endIndex)
+            .trim();
+    }
+
+
+    // AI ke sections
+    const explanation =
+        getSection("EXPLANATION:", "ISSUES:");
+
+    const issues =
+        getSection("ISSUES:", "TIME:");
+
+    const time =
+        getSection("TIME:", "SPACE:");
+
+    const space =
+        getSection("SPACE:", "OPTIMAL:");
+
+    const optimal =
+        getSection("OPTIMAL:", "OPTIMIZED_CODE:");
+
+    let optimizedCode =
+    getSection("OPTIMIZED_CODE:", null);
+
+
+// Sirf ``` ke andar ka code nikalo
+const codeMatch = optimizedCode.match(
+    /```[^\n]*\n([\s\S]*?)```/
+);
+
+if (codeMatch) {
+    optimizedCode = codeMatch[1].trim();
+}
+
+
+    // Agar sections detect nahi hue
+    // toh pura AI response dikha do
+    if (
+        !explanation &&
+        !issues &&
+        !time &&
+        !space &&
+        !optimal &&
+        !optimizedCode
+    ) {
+
+        resultsBody.innerHTML = `
+            <div class="card">
+
+                <div class="card-title">
+                    AI Analysis
+                </div>
+
+                <div style="
+                    white-space: pre-wrap;
+                    line-height: 1.7;
+                ">
+                    ${escapeHTML(text)}
+                </div>
+
+            </div>
+        `;
+
+        return;
+    }
+
+
+    // Issues ko display karo
+    const issuesHTML = issues
+        ? issues
+            .split("\n")
+            .filter(line => line.trim())
+            .map(line => `
+                <div style="
+                    margin-bottom: 8px;
+                    line-height: 1.6;
+                ">
+                    ${escapeHTML(line)}
+                </div>
+            `)
+            .join("")
+        : "No major issues found.";
+
+
+    // =========================
+    // RESULTS UI
+    // =========================
+
+    resultsBody.innerHTML = `
+
+        <!-- EXPLANATION -->
+
+        <div class="card">
+
+            <div class="card-title">
+                AI Explanation
+            </div>
+
+            <div style="
+                white-space: pre-wrap;
+                line-height: 1.7;
+            ">
+                ${escapeHTML(explanation)}
+            </div>
+
+        </div>
+
+
+        <!-- ISSUES -->
+
+        <div class="card">
+
+            <div class="card-title">
+                Bugs & Logical Issues
+            </div>
+
+            <div>
+                ${issuesHTML}
+            </div>
+
+        </div>
+
+
+        <!-- TIME -->
+
+        <div class="card">
+
+            <div class="card-title">
+                Time Complexity
+            </div>
+
+            <div style="
+                white-space: pre-wrap;
+                line-height: 1.7;
+            ">
+                ${escapeHTML(time)}
+            </div>
+
+        </div>
+
+
+        <!-- SPACE -->
+
+        <div class="card">
+
+            <div class="card-title">
+                Space Complexity
+            </div>
+
+            <div style="
+                white-space: pre-wrap;
+                line-height: 1.7;
+            ">
+                ${escapeHTML(space)}
+            </div>
+
+        </div>
+
+
+        <!-- BETTER APPROACH -->
+
+        <div class="card">
+
+            <div class="card-title">
+                Better Approach
+            </div>
+
+            <div style="
+                white-space: pre-wrap;
+                line-height: 1.7;
+            ">
+                ${escapeHTML(optimal)}
+            </div>
+
+        </div>
+
+
+        <!-- OPTIMIZED CODE -->
+
+        <div class="card">
+
+            <div style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 12px;
+            ">
+
+                <div class="card-title">
+                    Optimized Code
+                </div>
+
+                <button
+                    id="copyCodeBtn"
+                    type="button"
+                    style="
+                        padding: 7px 13px;
+                        border: 1px solid #555;
+                        border-radius: 6px;
+                        background: #222;
+                        color: white;
+                        cursor: pointer;
+                        font-size: 13px;
+                    "
+                >
+                    📋 Copy
+                </button>
+
+            </div>
+
+
+            <pre
+                id="optimizedCodeBox"
+                style="
+                    margin: 0;
+                    padding: 16px;
+                    overflow-x: auto;
+                    white-space: pre;
+                    border-radius: 8px;
+                    background: #111;
+                    line-height: 1.6;
+                "
+            ></pre>
+
+        </div>
+
+    `;
+
+
+    // =========================
+    // PUT CODE IN CODE BOX
+    // =========================
+
+    const codeBox =
+        document.getElementById("optimizedCodeBox");
+
+    if (codeBox) {
+        codeBox.textContent = optimizedCode;
+    }
+
+
+    // =========================
+    // COPY BUTTON
+    // =========================
+
+    const copyButton =
+        document.getElementById("copyCodeBtn");
+
+    if (copyButton) {
+
+        copyButton.addEventListener(
+            "click",
+            async function () {
+
+                try {
+
+                    await navigator.clipboard.writeText(
+                        optimizedCode
+                    );
+
+                    copyButton.textContent =
+                        "✓ Copied";
+
+                    setTimeout(() => {
+
+                        copyButton.textContent =
+                            "📋 Copy";
+
+                    }, 1500);
+
+                } catch (error) {
+
+                    console.error(
+                        "Copy failed:",
+                        error
+                    );
+
+                }
+
+            }
+        );
+
+    }
+
+}
+analyzeBtn.addEventListener("click", async () => {
+
+    const code = codeInput.value.trim();
+
+    if (!code) {
+        showError("Please enter some code first.");
+        return;
+    }
+
+    setLoading(true);
+
+    try {
+
+        const response = await fetch(
+            "http://127.0.0.1:8000/analyze",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    code: code
+                })
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data.detail || "Backend request failed"
+            );
+        }
+
+        console.log("AI RESPONSE:", data);
+
+        setLoading(false);
+
+        renderResults(data.analysis);
+
+    } catch (error) {
+
+        console.error("Analyze error:", error);
+
+        setLoading(false);
+
+        showError(
+            "Could not analyze code: " + error.message
+        );
+    }
+});
+const statusLine = document.getElementById('status-line');
+const statusCol = document.getElementById('status-col');
+const statusChars = document.getElementById('status-chars');
+
+function updateStatusBar(){
+  const value = codeInput.value;
+  statusChars.textContent = value.length;
+  const upToCursor = value.slice(0, codeInput.selectionStart);
+  const linesUpTo = upToCursor.split('\n');
+  statusLine.textContent = linesUpTo.length;
+  statusCol.textContent = linesUpTo[linesUpTo.length - 1].length + 1;
+}
+
+['input', 'keyup', 'click'].forEach(evt => codeInput.addEventListener(evt, updateStatusBar));
+updateStatusBar(); // initial call
+function escapeHTML(text) {
+
+    const div = document.createElement("div");
+
+    div.textContent = text || "";
+
+    return div.innerHTML;
+}
+  // Optimized code ko safely display karo
+  const optimizedCode = result.optimizedCode || "";
+
+  document.getElementById("optimizedCode").textContent =
+    optimizedCode;
+document.getElementById("explanation").textContent =
+    result.explanation || "";
+
+document.getElementById("issues").textContent =
+    result.issues || "";
+
+document.getElementById("timeComplexity").textContent =
+    result.timeComplexity || "";
+
+document.getElementById("spaceComplexity").textContent =
+    result.spaceComplexity || "";
+
+document.getElementById("betterApproach").textContent =
+    result.betterApproach || "";
+
+document.getElementById("optimizedCode").textContent =
+    result.optimizedCode || "";
+
+  // Copy button
+  document.getElementById("copyCodeBtn").addEventListener(
+    "click",
+    async () => {
+
+      try {
+
+        await navigator.clipboard.writeText(optimizedCode);
+
+        const btn = document.getElementById("copyCodeBtn");
+
+        btn.textContent = "✓ Copied";
+
+        setTimeout(() => {
+          btn.textContent = "📋 Copy";
+        }, 1500);
+
+      } catch (error) {
+
+        console.error("Copy failed:", error);
+
+      }
+
+    }
+  );
+
+
+ 
+
+
+analyzeBtn.addEventListener('click', async () => {
+
+  const code = codeInput.value.trim();
+
+  if (!code) {
+    showError('Please enter some code first.');
+    return;
+  }
+
+  setLoading(true);
+  resultsBody.innerHTML = emptyStateHTML;
+
+  try {
+
+    const response = await fetch(
+      "http://127.0.0.1:8000/analyze",
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify({
+          code: code
+        })
+      }
+    );
+
+   const data = await response.json();
+
+setLoading(false);
+
+console.log("BACKEND RESPONSE:", data);
+
+renderResults(data.analysis);
+
+
+resultsBody.querySelector("pre").textContent = data.analysis;
+
+  } catch (error) {
+    console.error("ACTUAL ERROR:", error);
+
+    setLoading(false);
+
+    showError(error.message);
+}
+
+});
+
+</script>
+
+</body>
+</html>
